@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	agenterrors "agentkit/errors"
 )
 
 type StreamAPI interface {
@@ -27,13 +29,21 @@ type Protocol interface {
 	io.Closer
 }
 
+type parsedItem struct {
+	msg Message
+	err error
+}
+
 type protocol struct {
 	parser       MessageParser
 	writer       io.Writer
 	writerCloser io.Closer
+	readerCloser io.Closer
 
-	mu     sync.Mutex
-	nextID int64
+	writeMu sync.Mutex
+	nextID  int64
+
+	readCh chan parsedItem
 }
 
 func NewProtocol(r io.Reader, w io.Writer) Protocol {
@@ -41,11 +51,28 @@ func NewProtocol(r io.Reader, w io.Writer) Protocol {
 		parser: NewMessageParser(r),
 		writer: w,
 		nextID: 1,
+		readCh: make(chan parsedItem, 128),
 	}
 	if closer, ok := w.(io.Closer); ok {
 		p.writerCloser = closer
 	}
+	if closer, ok := r.(io.Closer); ok {
+		p.readerCloser = closer
+	}
+	go p.runParser()
 	return p
+}
+
+func (p *protocol) runParser() {
+	for {
+		msg, err := p.parser.Next()
+		if err != nil {
+			p.readCh <- parsedItem{err: err}
+			close(p.readCh)
+			return
+		}
+		p.readCh <- parsedItem{msg: msg}
+	}
 }
 
 func (p *protocol) SendUserInput(ctx context.Context, input UserInput) error {
@@ -58,8 +85,8 @@ func (p *protocol) SendUserInput(ctx context.Context, input UserInput) error {
 		return err
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 
 	if _, err := io.WriteString(p.writer, payload); err != nil {
 		return fmt.Errorf("write user input: %w", err)
@@ -68,10 +95,27 @@ func (p *protocol) SendUserInput(ctx context.Context, input UserInput) error {
 }
 
 func (p *protocol) NextMessage(ctx context.Context) (Message, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	return p.nextMessageLocked(ctx)
+}
+
+func (p *protocol) nextMessageLocked(ctx context.Context) (Message, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case item, ok := <-p.readCh:
+			if !ok {
+				return nil, agenterrors.ErrEOF
+			}
+			if item.err != nil {
+				return nil, item.err
+			}
+			if item.msg == nil {
+				continue
+			}
+			return item.msg, nil
+		}
 	}
-	return p.parser.Next()
 }
 
 func (p *protocol) MCPInitialize(ctx context.Context, params InitializeParams) (*InitializeResult, error) {
@@ -103,10 +147,18 @@ func (p *protocol) MCPToolsCall(ctx context.Context, params ToolsCallParams) (*T
 }
 
 func (p *protocol) Close() error {
-	if p.writerCloser == nil {
-		return nil
+	var firstErr error
+	if p.writerCloser != nil {
+		if err := p.writerCloser.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return p.writerCloser.Close()
+	if p.readerCloser != nil {
+		if err := p.readerCloser.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (p *protocol) request(ctx context.Context, method string, params interface{}, out interface{}) error {
@@ -116,11 +168,7 @@ func (p *protocol) request(ctx context.Context, method string, params interface{
 	}
 
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		msg, err := p.parser.Next()
+		msg, err := p.nextMessageLocked(ctx)
 		if err != nil {
 			return err
 		}
@@ -160,8 +208,8 @@ func (p *protocol) writeJSONRPCRequest(ctx context.Context, method string, param
 		return 0, err
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 
 	id := p.nextID
 	p.nextID++
@@ -183,8 +231,8 @@ func (p *protocol) writeJSONRPCNotification(ctx context.Context, method string, 
 		return 0, err
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",

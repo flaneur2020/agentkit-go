@@ -8,6 +8,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
+
+	agenterrors "agentkit/errors"
 )
 
 // The protocol test suite covers:
@@ -84,9 +87,16 @@ func TestProtocolNextMessageContextCancelledWhileBlocked(t *testing.T) {
 	defer w.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := p.NextMessage(ctx)
+		errCh <- err
+	}()
+
+	time.Sleep(30 * time.Millisecond)
 	cancel()
 
-	_, err := p.NextMessage(ctx)
+	err := <-errCh
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("NextMessage() err = %v, want context.Canceled", err)
 	}
@@ -139,8 +149,8 @@ func TestProtocolMCPRequestSkipsNonMatchingResponses(t *testing.T) {
 func TestProtocolMCPRequestEOF(t *testing.T) {
 	p := NewProtocol(strings.NewReader(""), &bytes.Buffer{})
 	_, err := p.MCPToolsList(context.Background())
-	if err == nil {
-		t.Fatalf("MCPToolsList() error = nil, want EOF")
+	if !agenterrors.IsEOF(err) {
+		t.Fatalf("MCPToolsList() err = %v, want EOF", err)
 	}
 }
 
