@@ -71,14 +71,14 @@ type AssistantPayload struct {
 }
 
 type UserMessage struct {
-	Type            MessageType      `json:"type"`
-	UUID            string           `json:"uuid,omitempty"`
-	SessionID       string           `json:"session_id,omitempty"`
-	ParentToolUseID *string          `json:"parent_tool_use_id"`
-	Message         UserPayload      `json:"message"`
-	ToolUseResult   *ToolUseResult   `json:"tool_use_result,omitempty"`
-	Usage           *Usage           `json:"usage,omitempty"`
-	Metadata        json.RawMessage  `json:"metadata,omitempty"`
+	Type            MessageType     `json:"type"`
+	UUID            string          `json:"uuid,omitempty"`
+	SessionID       string          `json:"session_id,omitempty"`
+	ParentToolUseID *string         `json:"parent_tool_use_id"`
+	Message         UserPayload     `json:"message"`
+	ToolUseResult   *ToolUseResult  `json:"tool_use_result,omitempty"`
+	Usage           *Usage          `json:"usage,omitempty"`
+	Metadata        json.RawMessage `json:"metadata,omitempty"`
 }
 
 func (m *UserMessage) GetType() MessageType {
@@ -98,21 +98,21 @@ type ToolUseResult struct {
 }
 
 type ResultMessage struct {
-	Type              MessageType                    `json:"type"`
-	Subtype           string                         `json:"subtype,omitempty"`
-	UUID              string                         `json:"uuid,omitempty"`
-	SessionID         string                         `json:"session_id,omitempty"`
-	IsError           bool                           `json:"is_error"`
-	DurationMS        int64                          `json:"duration_ms,omitempty"`
-	DurationAPIMS     int64                          `json:"duration_api_ms,omitempty"`
-	NumTurns          int                            `json:"num_turns,omitempty"`
-	Result            string                         `json:"result,omitempty"`
-	TotalCostUSD      float64                        `json:"total_cost_usd,omitempty"`
-	Usage             *Usage                         `json:"usage,omitempty"`
-	ModelUsage        map[string]ModelUsage          `json:"modelUsage,omitempty"`
-	PermissionDenials []PermissionDenial             `json:"permission_denials,omitempty"`
-	StructuredOutput  json.RawMessage                `json:"structured_output,omitempty"`
-	Errors            []string                       `json:"errors,omitempty"`
+	Type              MessageType           `json:"type"`
+	Subtype           string                `json:"subtype,omitempty"`
+	UUID              string                `json:"uuid,omitempty"`
+	SessionID         string                `json:"session_id,omitempty"`
+	IsError           bool                  `json:"is_error"`
+	DurationMS        int64                 `json:"duration_ms,omitempty"`
+	DurationAPIMS     int64                 `json:"duration_api_ms,omitempty"`
+	NumTurns          int                   `json:"num_turns,omitempty"`
+	Result            string                `json:"result,omitempty"`
+	TotalCostUSD      float64               `json:"total_cost_usd,omitempty"`
+	Usage             *Usage                `json:"usage,omitempty"`
+	ModelUsage        map[string]ModelUsage `json:"modelUsage,omitempty"`
+	PermissionDenials []PermissionDenial    `json:"permission_denials,omitempty"`
+	StructuredOutput  json.RawMessage       `json:"structured_output,omitempty"`
+	Errors            []string              `json:"errors,omitempty"`
 }
 
 func (m *ResultMessage) GetType() MessageType {
@@ -126,11 +126,11 @@ type PermissionDenial struct {
 }
 
 type StreamEventMessage struct {
-	Type            MessageType  `json:"type"`
-	UUID            string       `json:"uuid,omitempty"`
-	SessionID       string       `json:"session_id,omitempty"`
-	ParentToolUseID *string      `json:"parent_tool_use_id"`
-	Event           StreamEvent  `json:"event"`
+	Type            MessageType `json:"type"`
+	UUID            string      `json:"uuid,omitempty"`
+	SessionID       string      `json:"session_id,omitempty"`
+	ParentToolUseID *string     `json:"parent_tool_use_id"`
+	Event           StreamEvent `json:"event"`
 }
 
 func (m *StreamEventMessage) GetType() MessageType {
@@ -162,13 +162,13 @@ type MessageContentBlock struct {
 }
 
 type Usage struct {
-	InputTokens             int64                   `json:"input_tokens,omitempty"`
-	OutputTokens            int64                   `json:"output_tokens,omitempty"`
-	CacheCreationInputToken int64                   `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens    int64                   `json:"cache_read_input_tokens,omitempty"`
-	ServerToolUse           map[string]int64        `json:"server_tool_use,omitempty"`
-	ServiceTier             string                  `json:"service_tier,omitempty"`
-	CacheCreation           map[string]int64        `json:"cache_creation,omitempty"`
+	InputTokens             int64            `json:"input_tokens,omitempty"`
+	OutputTokens            int64            `json:"output_tokens,omitempty"`
+	CacheCreationInputToken int64            `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens    int64            `json:"cache_read_input_tokens,omitempty"`
+	ServerToolUse           map[string]int64 `json:"server_tool_use,omitempty"`
+	ServiceTier             string           `json:"service_tier,omitempty"`
+	CacheCreation           map[string]int64 `json:"cache_creation,omitempty"`
 }
 
 type ModelUsage struct {
@@ -216,8 +216,8 @@ type UserInput struct {
 }
 
 type InitializeParams struct {
-	ClientInfo   ClientInfo          `json:"clientInfo,omitempty"`
-	Capabilities map[string]any      `json:"capabilities,omitempty"`
+	ClientInfo   ClientInfo             `json:"clientInfo,omitempty"`
+	Capabilities map[string]interface{} `json:"capabilities,omitempty"`
 }
 
 type ClientInfo struct {
@@ -228,7 +228,7 @@ type ClientInfo struct {
 type InitializeResult struct {
 	ProtocolVersion string                 `json:"protocolVersion,omitempty"`
 	ServerInfo      ServerInfo             `json:"serverInfo,omitempty"`
-	Capabilities    map[string]any         `json:"capabilities,omitempty"`
+	Capabilities    map[string]interface{} `json:"capabilities,omitempty"`
 }
 
 type ServerInfo struct {
@@ -247,8 +247,8 @@ type ToolDefinition struct {
 }
 
 type ToolsCallParams struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	Name      string                 `json:"name"`
+	Arguments map[string]interface{} `json:"arguments,omitempty"`
 }
 
 type ToolsCallResult struct {
