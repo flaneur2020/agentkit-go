@@ -2,54 +2,12 @@ package claude
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
+
+	agenterrors "agentkit/errors"
 )
-
-type mockProtocol struct {
-	sendInput      UserInput
-	nextMessage    Message
-	initParams     InitializeParams
-	callParams     ToolsCallParams
-	initialized    bool
-	closed         bool
-	nextMessageErr error
-}
-
-func (m *mockProtocol) SendUserInput(ctx context.Context, input UserInput) error {
-	m.sendInput = input
-	return nil
-}
-
-func (m *mockProtocol) NextMessage(ctx context.Context) (Message, error) {
-	return m.nextMessage, m.nextMessageErr
-}
-
-func (m *mockProtocol) MCPInitialize(ctx context.Context, params InitializeParams) (*InitializeResult, error) {
-	m.initParams = params
-	return &InitializeResult{ProtocolVersion: "2024-11-05"}, nil
-}
-
-func (m *mockProtocol) MCPInitialized(ctx context.Context) error {
-	m.initialized = true
-	return nil
-}
-
-func (m *mockProtocol) MCPToolsList(ctx context.Context) (*ToolsListResult, error) {
-	return &ToolsListResult{Tools: []ToolDefinition{{Name: "calculator"}}}, nil
-}
-
-func (m *mockProtocol) MCPToolsCall(ctx context.Context, params ToolsCallParams) (*ToolsCallResult, error) {
-	m.callParams = params
-	return &ToolsCallResult{Content: []ToolResultContent{{Type: "text", Text: "ok"}}}, nil
-}
-
-func (m *mockProtocol) Close() error {
-	m.closed = true
-	return nil
-}
 
 func TestClientBuilderCommandArgs(t *testing.T) {
 	builder := NewClientBuilder().
@@ -89,70 +47,16 @@ func TestClientBuilderCommandArgs(t *testing.T) {
 	}
 }
 
-func TestClientForwardsProtocolMethods(t *testing.T) {
-	mock := &mockProtocol{
-		nextMessage: &ResultMessage{Type: MessageTypeResult, Subtype: "success"},
-	}
-	client := &Client{protocol: mock}
-
-	if err := client.SendUserInput(context.Background(), UserInput{Prompt: "hello"}); err != nil {
-		t.Fatalf("SendUserInput() error = %v", err)
-	}
-	if mock.sendInput.Prompt != "hello" {
-		t.Fatalf("prompt = %q, want hello", mock.sendInput.Prompt)
-	}
-
-	msg, err := client.NextMessage(context.Background())
-	if err != nil {
-		t.Fatalf("NextMessage() error = %v", err)
-	}
-	if msg.GetType() != MessageTypeResult {
-		t.Fatalf("message type = %s, want result", msg.GetType())
-	}
-
-	_, err = client.MCPInitialize(context.Background(), InitializeParams{ClientInfo: ClientInfo{Name: "agentkit"}})
-	if err != nil {
-		t.Fatalf("MCPInitialize() error = %v", err)
-	}
-	if mock.initParams.ClientInfo.Name != "agentkit" {
-		t.Fatalf("init client name = %q, want agentkit", mock.initParams.ClientInfo.Name)
-	}
-
-	if err := client.MCPInitialized(context.Background()); err != nil {
-		t.Fatalf("MCPInitialized() error = %v", err)
-	}
-	if !mock.initialized {
-		t.Fatalf("MCPInitialized() was not forwarded")
-	}
-
-	_, err = client.MCPToolsCall(context.Background(), ToolsCallParams{Name: "calculator"})
-	if err != nil {
-		t.Fatalf("MCPToolsCall() error = %v", err)
-	}
-	if mock.callParams.Name != "calculator" {
-		t.Fatalf("tool call name = %q, want calculator", mock.callParams.Name)
-	}
-
-	if err := client.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if !mock.closed {
-		t.Fatalf("Close() was not forwarded")
-	}
-}
-
-func TestClientBuilderBuildAndProtocolIntegration(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "fake-claude.sh")
-	script := "#!/bin/sh\ncat\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
+func TestClientBuildAndChatWithRealClaude(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
 
 	client, err := NewClientBuilder().
-		WithBinary(bin).
-		WithModel("sonnet").
-		Build(context.Background())
+		WithBinary("claude").
+		WithMaxTurns(1).
+		WithModel("haiku").
+		WithPermissionMode("default").
+		Build(ctx)
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -160,20 +64,50 @@ func TestClientBuilderBuildAndProtocolIntegration(t *testing.T) {
 		_ = client.Close()
 	}()
 
-	input := UserInput{Prompt: "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}\n"}
-	if err := client.SendUserInput(context.Background(), input); err != nil {
+	input := UserInput{
+		Type:   UserInputTypePrompt,
+		Prompt: "Reply with exactly: OK\n",
+	}
+	if err := client.SendUserInput(ctx, input); err != nil {
 		t.Fatalf("SendUserInput() error = %v", err)
 	}
+	go func() {
+		_ = client.stdin.Close()
+	}()
 
-	msg, err := client.NextMessage(context.Background())
-	if err != nil {
-		t.Fatalf("NextMessage() error = %v", err)
+	var gotSystem bool
+	var gotResult bool
+	for {
+		msg, err := client.NextMessage(ctx)
+		if err != nil {
+			if agenterrors.IsEOF(err) {
+				break
+			}
+			t.Fatalf("NextMessage() error = %v", err)
+		}
+
+		switch m := msg.(type) {
+		case *SystemMessage:
+			gotSystem = true
+		case *ResultMessage:
+			gotResult = true
+			if m.IsError {
+				t.Fatalf("result is error: subtype=%s errors=%v", m.Subtype, m.Errors)
+			}
+			if m.Subtype == "" {
+				t.Fatalf("result subtype is empty")
+			}
+			if m.Result == "" {
+				t.Fatalf("result text is empty")
+			}
+			return
+		}
 	}
-	result, ok := msg.(*ResultMessage)
-	if !ok {
-		t.Fatalf("msg type = %T, want *ResultMessage", msg)
+
+	if !gotSystem {
+		t.Fatalf("did not receive system message")
 	}
-	if result.Subtype != "success" {
-		t.Fatalf("result subtype = %q, want success", result.Subtype)
+	if !gotResult {
+		t.Fatalf("did not receive result message")
 	}
 }

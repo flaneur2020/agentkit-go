@@ -46,13 +46,12 @@ type MCPServerState struct {
 }
 
 type AssistantMessage struct {
-	Type            MessageType       `json:"type"`
-	UUID            string            `json:"uuid,omitempty"`
-	SessionID       string            `json:"session_id,omitempty"`
-	ParentToolUseID *string           `json:"parent_tool_use_id"`
-	Message         AssistantPayload  `json:"message"`
-	ToolUseResult   json.RawMessage   `json:"tool_use_result,omitempty"`
-	Extra           map[string]string `json:"-"`
+	Type            MessageType      `json:"type"`
+	UUID            string           `json:"uuid,omitempty"`
+	SessionID       string           `json:"session_id,omitempty"`
+	ParentToolUseID *string          `json:"parent_tool_use_id"`
+	Message         AssistantPayload `json:"message"`
+	ToolUseResult   *ToolUseResult   `json:"tool_use_result,omitempty"`
 }
 
 func (m *AssistantMessage) GetType() MessageType {
@@ -211,8 +210,32 @@ type JSONRPCError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+type UserInputType string
+
+const (
+	UserInputTypePrompt     UserInputType = "prompt"
+	UserInputTypePermission UserInputType = "permission"
+	UserInputTypeRaw        UserInputType = "raw"
+)
+
+type PermissionDecision string
+
+const (
+	PermissionDecisionAllow PermissionDecision = "allow"
+	PermissionDecisionDeny  PermissionDecision = "deny"
+)
+
+type PermissionInput struct {
+	Decision  PermissionDecision `json:"decision"`
+	ToolUseID string             `json:"tool_use_id,omitempty"`
+	Reason    string             `json:"reason,omitempty"`
+}
+
 type UserInput struct {
-	Prompt string
+	Type       UserInputType    `json:"type,omitempty"`
+	Prompt     string           `json:"prompt,omitempty"`
+	Permission *PermissionInput `json:"permission,omitempty"`
+	Raw        string           `json:"raw,omitempty"`
 }
 
 type InitializeParams struct {

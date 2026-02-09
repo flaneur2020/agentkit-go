@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -51,14 +52,16 @@ func (p *protocol) SendUserInput(ctx context.Context, input UserInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if input.Prompt == "" {
-		return fmt.Errorf("prompt is empty")
+
+	payload, err := inputPayload(input)
+	if err != nil {
+		return err
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if _, err := io.WriteString(p.writer, input.Prompt); err != nil {
+	if _, err := io.WriteString(p.writer, payload); err != nil {
 		return fmt.Errorf("write user input: %w", err)
 	}
 	return nil
@@ -192,4 +195,44 @@ func (p *protocol) writeJSONRPCNotification(ctx context.Context, method string, 
 		return 0, fmt.Errorf("write jsonrpc notification: %w", err)
 	}
 	return 0, nil
+}
+
+func inputPayload(input UserInput) (string, error) {
+	inputType := input.Type
+	if inputType == "" {
+		if input.Raw != "" {
+			inputType = UserInputTypeRaw
+		} else if input.Permission != nil {
+			inputType = UserInputTypePermission
+		} else {
+			inputType = UserInputTypePrompt
+		}
+	}
+
+	switch inputType {
+	case UserInputTypePrompt:
+		if strings.TrimSpace(input.Prompt) == "" {
+			return "", fmt.Errorf("prompt is empty")
+		}
+		return input.Prompt, nil
+	case UserInputTypeRaw:
+		if input.Raw == "" {
+			return "", fmt.Errorf("raw input is empty")
+		}
+		return input.Raw, nil
+	case UserInputTypePermission:
+		if input.Permission == nil {
+			return "", fmt.Errorf("permission input is nil")
+		}
+		if input.Permission.Decision != PermissionDecisionAllow && input.Permission.Decision != PermissionDecisionDeny {
+			return "", fmt.Errorf("unsupported permission decision: %s", input.Permission.Decision)
+		}
+		payload, err := json.Marshal(input.Permission)
+		if err != nil {
+			return "", fmt.Errorf("marshal permission input: %w", err)
+		}
+		return string(payload), nil
+	default:
+		return "", fmt.Errorf("unsupported user input type: %s", input.Type)
+	}
 }

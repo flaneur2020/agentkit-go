@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
+
+// The protocol test suite covers:
+// - chat inputs (prompt / permission / raw) and validation errors,
+// - MCP initialize/initialized/tools/list/tools/call,
+// - JSON-RPC error/EOF/non-matching response branches.
 
 func TestProtocolSendUserInput(t *testing.T) {
 	var out bytes.Buffer
@@ -18,6 +24,136 @@ func TestProtocolSendUserInput(t *testing.T) {
 	}
 	if out.String() != "hello world" {
 		t.Fatalf("written = %q, want %q", out.String(), "hello world")
+	}
+}
+
+func TestProtocolSendUserInputRaw(t *testing.T) {
+	var out bytes.Buffer
+	p := NewProtocol(strings.NewReader(""), &out)
+
+	input := UserInput{Type: UserInputTypeRaw, Raw: "{\"action\":\"continue\"}"}
+	if err := p.SendUserInput(context.Background(), input); err != nil {
+		t.Fatalf("SendUserInput() error = %v", err)
+	}
+	if out.String() != input.Raw {
+		t.Fatalf("written = %q, want %q", out.String(), input.Raw)
+	}
+}
+
+func TestProtocolSendUserInputErrors(t *testing.T) {
+	var out bytes.Buffer
+	p := NewProtocol(strings.NewReader(""), &out)
+
+	if err := p.SendUserInput(context.Background(), UserInput{Type: UserInputTypePrompt, Prompt: "   "}); err == nil {
+		t.Fatalf("prompt empty should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{Type: UserInputTypeRaw, Raw: ""}); err == nil {
+		t.Fatalf("raw empty should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{Type: UserInputTypePermission}); err == nil {
+		t.Fatalf("nil permission should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type: UserInputTypePermission,
+		Permission: &PermissionInput{
+			Decision: "maybe",
+		},
+	}); err == nil {
+		t.Fatalf("invalid permission decision should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{Type: "unknown", Prompt: "x"}); err == nil {
+		t.Fatalf("unknown input type should return error")
+	}
+}
+
+func TestProtocolNextMessageContextCancelled(t *testing.T) {
+	p := NewProtocol(strings.NewReader(""), &bytes.Buffer{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := p.NextMessage(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("NextMessage() err = %v, want context.Canceled", err)
+	}
+}
+
+func TestProtocolMCPRequestError(t *testing.T) {
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}` + "\n")
+	p := NewProtocol(in, &bytes.Buffer{})
+
+	_, err := p.MCPToolsList(context.Background())
+	if err == nil {
+		t.Fatalf("MCPToolsList() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "jsonrpc error -32601") {
+		t.Fatalf("error = %v, want jsonrpc error", err)
+	}
+}
+
+func TestProtocolMCPRequestDecodeError(t *testing.T) {
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":"bad"}` + "\n")
+	p := NewProtocol(in, &bytes.Buffer{})
+
+	_, err := p.MCPToolsList(context.Background())
+	if err == nil {
+		t.Fatalf("MCPToolsList() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "decode tools/list result") {
+		t.Fatalf("error = %v, want decode error", err)
+	}
+}
+
+func TestProtocolMCPRequestSkipsNonMatchingResponses(t *testing.T) {
+	in := strings.NewReader(
+		`{"jsonrpc":"2.0","id":999,"result":{"tools":[{"name":"wrong"}]}}` + "\n" +
+			`{"type":"system","subtype":"init"}` + "\n" +
+			`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"calculator"}]}}` + "\n",
+	)
+	var out bytes.Buffer
+	p := NewProtocol(in, &out)
+
+	resp, err := p.MCPToolsList(context.Background())
+	if err != nil {
+		t.Fatalf("MCPToolsList() error = %v", err)
+	}
+	if len(resp.Tools) != 1 || resp.Tools[0].Name != "calculator" {
+		t.Fatalf("tools = %+v, want calculator", resp.Tools)
+	}
+}
+
+func TestProtocolMCPRequestEOF(t *testing.T) {
+	p := NewProtocol(strings.NewReader(""), &bytes.Buffer{})
+	_, err := p.MCPToolsList(context.Background())
+	if err == nil {
+		t.Fatalf("MCPToolsList() error = nil, want EOF")
+	}
+}
+
+func TestProtocolSendUserInputPermission(t *testing.T) {
+	var out bytes.Buffer
+	p := NewProtocol(strings.NewReader(""), &out)
+
+	input := UserInput{
+		Type: UserInputTypePermission,
+		Permission: &PermissionInput{
+			Decision:  PermissionDecisionAllow,
+			ToolUseID: "toolu_123",
+			Reason:    "approved",
+		},
+	}
+	if err := p.SendUserInput(context.Background(), input); err != nil {
+		t.Fatalf("SendUserInput() error = %v", err)
+	}
+
+	var payload PermissionInput
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal permission payload: %v", err)
+	}
+	if payload.Decision != PermissionDecisionAllow {
+		t.Fatalf("decision = %q, want allow", payload.Decision)
+	}
+	if payload.ToolUseID != "toolu_123" {
+		t.Fatalf("tool_use_id = %q, want toolu_123", payload.ToolUseID)
 	}
 }
 
