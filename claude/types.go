@@ -1,6 +1,9 @@
 package claude
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type MessageType string
 
@@ -34,6 +37,9 @@ type SystemMessage struct {
 	SlashCommands     []string         `json:"slash_commands,omitempty"`
 	Agents            []string         `json:"agents,omitempty"`
 	ClaudeCodeVersion string           `json:"claude_code_version,omitempty"`
+	OutputStyle       string           `json:"output_style,omitempty"`
+	Skills            []string         `json:"skills,omitempty"`
+	Plugins           []PluginInfo     `json:"plugins,omitempty"`
 }
 
 func (m *SystemMessage) GetType() MessageType {
@@ -43,6 +49,11 @@ func (m *SystemMessage) GetType() MessageType {
 type MCPServerState struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+type PluginInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path,omitempty"`
 }
 
 type AssistantMessage struct {
@@ -59,14 +70,15 @@ func (m *AssistantMessage) GetType() MessageType {
 }
 
 type AssistantPayload struct {
-	Model        string                `json:"model,omitempty"`
-	ID           string                `json:"id,omitempty"`
-	Type         string                `json:"type,omitempty"`
-	Role         string                `json:"role,omitempty"`
-	Content      []MessageContentBlock `json:"content,omitempty"`
-	StopReason   *string               `json:"stop_reason,omitempty"`
-	StopSequence *string               `json:"stop_sequence,omitempty"`
-	Usage        *Usage                `json:"usage,omitempty"`
+	Model             string          `json:"model,omitempty"`
+	ID                string          `json:"id,omitempty"`
+	Type              string          `json:"type,omitempty"`
+	Role              string          `json:"role,omitempty"`
+	Content           []ContentBlock  `json:"content,omitempty"`
+	StopReason        *string         `json:"stop_reason,omitempty"`
+	StopSequence      *string         `json:"stop_sequence,omitempty"`
+	Usage             *Usage          `json:"usage,omitempty"`
+	ContextManagement json.RawMessage `json:"context_management,omitempty"`
 }
 
 type UserMessage struct {
@@ -85,8 +97,8 @@ func (m *UserMessage) GetType() MessageType {
 }
 
 type UserPayload struct {
-	Role    string                `json:"role,omitempty"`
-	Content []MessageContentBlock `json:"content,omitempty"`
+	Role    string         `json:"role,omitempty"`
+	Content []ContentBlock `json:"content,omitempty"`
 }
 
 type ToolUseResult struct {
@@ -106,6 +118,7 @@ type ResultMessage struct {
 	DurationAPIMS     int64                 `json:"duration_api_ms,omitempty"`
 	NumTurns          int                   `json:"num_turns,omitempty"`
 	Result            string                `json:"result,omitempty"`
+	StopReason        *string               `json:"stop_reason,omitempty"`
 	TotalCostUSD      float64               `json:"total_cost_usd,omitempty"`
 	Usage             *Usage                `json:"usage,omitempty"`
 	ModelUsage        map[string]ModelUsage `json:"modelUsage,omitempty"`
@@ -136,28 +149,188 @@ func (m *StreamEventMessage) GetType() MessageType {
 	return m.Type
 }
 
+type StreamEventType string
+
+const (
+	StreamEventTypeMessageStart      StreamEventType = "message_start"
+	StreamEventTypeContentBlockStart StreamEventType = "content_block_start"
+	StreamEventTypeContentBlockDelta StreamEventType = "content_block_delta"
+	StreamEventTypeContentBlockStop  StreamEventType = "content_block_stop"
+	StreamEventTypeMessageDelta      StreamEventType = "message_delta"
+	StreamEventTypeMessageStop       StreamEventType = "message_stop"
+)
+
 type StreamEvent struct {
-	Type         string          `json:"type"`
-	Index        *int            `json:"index,omitempty"`
-	Delta        *StreamDelta    `json:"delta,omitempty"`
-	Message      json.RawMessage `json:"message,omitempty"`
-	ContentBlock json.RawMessage `json:"content_block,omitempty"`
+	Type              StreamEventType         `json:"type"`
+	MessageStart      *MessageStartEvent      `json:"-"`
+	ContentBlockStart *ContentBlockStartEvent `json:"-"`
+	ContentBlockDelta *ContentBlockDeltaEvent `json:"-"`
+	ContentBlockStop  *ContentBlockStopEvent  `json:"-"`
+	MessageDelta      *MessageDeltaEvent      `json:"-"`
+	MessageStop       *MessageStopEvent       `json:"-"`
 }
+
+func (e *StreamEvent) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		Type StreamEventType `json:"type"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("parse stream event type: %w", err)
+	}
+
+	e.Type = probe.Type
+	switch probe.Type {
+	case StreamEventTypeMessageStart:
+		var v MessageStartEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.MessageStart = &v
+	case StreamEventTypeContentBlockStart:
+		var v ContentBlockStartEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.ContentBlockStart = &v
+	case StreamEventTypeContentBlockDelta:
+		var v ContentBlockDeltaEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.ContentBlockDelta = &v
+	case StreamEventTypeContentBlockStop:
+		var v ContentBlockStopEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.ContentBlockStop = &v
+	case StreamEventTypeMessageDelta:
+		var v MessageDeltaEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.MessageDelta = &v
+	case StreamEventTypeMessageStop:
+		var v MessageStopEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		e.MessageStop = &v
+	default:
+		return fmt.Errorf("unsupported stream event type: %q", probe.Type)
+	}
+	return nil
+}
+
+type MessageStartEvent struct {
+	Type    StreamEventType `json:"type"`
+	Message json.RawMessage `json:"message,omitempty"`
+}
+
+type ContentBlockStartEvent struct {
+	Type         StreamEventType `json:"type"`
+	Index        int             `json:"index"`
+	ContentBlock ContentBlock    `json:"content_block"`
+}
+
+type ContentBlockDeltaEvent struct {
+	Type  StreamEventType `json:"type"`
+	Index int             `json:"index"`
+	Delta StreamDelta     `json:"delta"`
+}
+
+type ContentBlockStopEvent struct {
+	Type  StreamEventType `json:"type"`
+	Index int             `json:"index"`
+}
+
+type MessageDeltaEvent struct {
+	Type  StreamEventType `json:"type"`
+	Delta json.RawMessage `json:"delta,omitempty"`
+	Usage json.RawMessage `json:"usage,omitempty"`
+}
+
+type MessageStopEvent struct {
+	Type StreamEventType `json:"type"`
+}
+
+type StreamDeltaType string
+
+const (
+	StreamDeltaTypeText StreamDeltaType = "text_delta"
+)
 
 type StreamDelta struct {
-	Type       string `json:"type,omitempty"`
-	Text       string `json:"text,omitempty"`
-	StopReason string `json:"stop_reason,omitempty"`
+	Type       StreamDeltaType `json:"type,omitempty"`
+	Text       string          `json:"text,omitempty"`
+	StopReason string          `json:"stop_reason,omitempty"`
 }
 
-type MessageContentBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   json.RawMessage `json:"content,omitempty"`
+type ContentBlockType string
+
+const (
+	ContentBlockTypeText       ContentBlockType = "text"
+	ContentBlockTypeToolUse    ContentBlockType = "tool_use"
+	ContentBlockTypeToolResult ContentBlockType = "tool_result"
+)
+
+type ContentBlock struct {
+	Type       ContentBlockType        `json:"type"`
+	Text       *TextContentBlock       `json:"-"`
+	ToolUse    *ToolUseContentBlock    `json:"-"`
+	ToolResult *ToolResultContentBlock `json:"-"`
+}
+
+func (b *ContentBlock) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		Type ContentBlockType `json:"type"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("parse content block type: %w", err)
+	}
+
+	b.Type = probe.Type
+	switch probe.Type {
+	case ContentBlockTypeText:
+		var v TextContentBlock
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		b.Text = &v
+	case ContentBlockTypeToolUse:
+		var v ToolUseContentBlock
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		b.ToolUse = &v
+	case ContentBlockTypeToolResult:
+		var v ToolResultContentBlock
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		b.ToolResult = &v
+	default:
+		return fmt.Errorf("unsupported content block type: %q", probe.Type)
+	}
+	return nil
+}
+
+type TextContentBlock struct {
+	Type ContentBlockType `json:"type"`
+	Text string           `json:"text,omitempty"`
+}
+
+type ToolUseContentBlock struct {
+	Type  ContentBlockType `json:"type"`
+	ID    string           `json:"id,omitempty"`
+	Name  string           `json:"name,omitempty"`
+	Input json.RawMessage  `json:"input,omitempty"`
+}
+
+type ToolResultContentBlock struct {
+	Type      ContentBlockType `json:"type"`
+	ToolUseID string           `json:"tool_use_id,omitempty"`
+	Content   json.RawMessage  `json:"content,omitempty"`
 }
 
 type Usage struct {

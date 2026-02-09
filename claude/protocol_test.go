@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,20 @@ func TestProtocolSendUserInputErrors(t *testing.T) {
 
 func TestProtocolNextMessageContextCancelled(t *testing.T) {
 	p := NewProtocol(strings.NewReader(""), &bytes.Buffer{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := p.NextMessage(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("NextMessage() err = %v, want context.Canceled", err)
+	}
+}
+
+func TestProtocolNextMessageContextCancelledWhileBlocked(t *testing.T) {
+	r, w := io.Pipe()
+	p := NewProtocol(r, &bytes.Buffer{})
+	defer w.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
