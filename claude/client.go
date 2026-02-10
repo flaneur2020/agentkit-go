@@ -80,6 +80,8 @@ func (c *Client) Process() *os.Process {
 
 type ClientBuilder struct {
 	binary                     string
+	readWriterReader           io.Reader
+	readWriterWriter           io.Writer
 	model                      string
 	maxTurns                   *int
 	maxBudgetUSD               *float64
@@ -110,6 +112,12 @@ func NewClientBuilder() *ClientBuilder {
 
 func (b *ClientBuilder) WithBinary(path string) *ClientBuilder {
 	b.binary = strings.TrimSpace(path)
+	return b
+}
+
+func (b *ClientBuilder) WithReadWriter(r io.Reader, w io.Writer) *ClientBuilder {
+	b.readWriterReader = r
+	b.readWriterWriter = w
 	return b
 }
 
@@ -197,6 +205,24 @@ func (b *ClientBuilder) WithStderr(w io.Writer) *ClientBuilder {
 }
 
 func (b *ClientBuilder) Build(ctx context.Context) (*Client, error) {
+	hasReader := b.readWriterReader != nil
+	hasWriter := b.readWriterWriter != nil
+	if hasReader || hasWriter {
+		if !hasReader || !hasWriter {
+			return nil, fmt.Errorf("withReadWriter requires both reader and writer")
+		}
+
+		p := NewProtocol(b.readWriterReader, b.readWriterWriter)
+		client := &Client{protocol: p}
+		if stdin, ok := b.readWriterWriter.(io.WriteCloser); ok {
+			client.stdin = stdin
+		}
+		if stdout, ok := b.readWriterReader.(io.ReadCloser); ok {
+			client.stdout = stdout
+		}
+		return client, nil
+	}
+
 	if strings.TrimSpace(b.binary) == "" {
 		return nil, fmt.Errorf("binary is empty")
 	}

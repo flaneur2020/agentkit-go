@@ -95,10 +95,6 @@ func (p *protocol) SendUserInput(ctx context.Context, input UserInput) error {
 }
 
 func (p *protocol) NextMessage(ctx context.Context) (Message, error) {
-	return p.nextMessageLocked(ctx)
-}
-
-func (p *protocol) nextMessageLocked(ctx context.Context) (Message, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,7 +164,7 @@ func (p *protocol) request(ctx context.Context, method string, params interface{
 	}
 
 	for {
-		msg, err := p.nextMessageLocked(ctx)
+		msg, err := p.NextMessage(ctx)
 		if err != nil {
 			return err
 		}
