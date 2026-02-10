@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	agenterrors "agentkit/errors"
+	clerrors "github.com/flaneur2020/agentkit-go/claude/errors"
 )
 
 type StreamAPI interface {
@@ -101,7 +101,7 @@ func (p *protocol) NextMessage(ctx context.Context) (Message, error) {
 			return nil, ctx.Err()
 		case item, ok := <-p.readCh:
 			if !ok {
-				return nil, agenterrors.ErrEOF
+				return nil, clerrors.ErrEOF
 			}
 			if item.err != nil {
 				return nil, item.err

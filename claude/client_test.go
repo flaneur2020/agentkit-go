@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	agenterrors "agentkit/errors"
+	clerrors "github.com/flaneur2020/agentkit-go/claude/errors"
 )
 
 func TestClientBuilderCommandArgs(t *testing.T) {
@@ -83,7 +83,7 @@ func TestClientBuildAndChatWithRealClaude(t *testing.T) {
 	for {
 		msg, err := client.NextMessage(ctx)
 		if err != nil {
-			if agenterrors.IsEOF(err) {
+			if clerrors.IsEOF(err) {
 				break
 			}
 			t.Fatalf("NextMessage() error = %v", err)
@@ -178,7 +178,7 @@ func TestClientBuildWithRealClaudeIncludePartialMessages(t *testing.T) {
 	for {
 		msg, err := client.NextMessage(ctx)
 		if err != nil {
-			if agenterrors.IsEOF(err) {
+			if clerrors.IsEOF(err) {
 				break
 			}
 			t.Fatalf("NextMessage() error = %v", err)
@@ -244,7 +244,7 @@ func TestClientBuildWithRealClaudeFileEdit(t *testing.T) {
 	for {
 		msg, err := client.NextMessage(ctx)
 		if err != nil {
-			if agenterrors.IsEOF(err) {
+			if clerrors.IsEOF(err) {
 				break
 			}
 			t.Fatalf("NextMessage() error = %v", err)

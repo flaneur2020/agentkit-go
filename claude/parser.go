@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	agenterrors "agentkit/errors"
+	clerrors "github.com/flaneur2020/agentkit-go/claude/errors"
 )
 
 type MessageParser interface {
@@ -78,7 +78,7 @@ func (p *messageParser) Next() (Message, error) {
 			if err := p.scanner.Err(); err != nil {
 				return nil, err
 			}
-			return nil, agenterrors.ErrEOF
+			return nil, clerrors.ErrEOF
 		}
 
 		msg, err := p.ParseLine(p.scanner.Bytes())

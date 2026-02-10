@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	agenterrors "agentkit/errors"
+	clerrors "github.com/flaneur2020/agentkit-go/claude/errors"
 )
 
 // The protocol test suite covers:
@@ -149,7 +149,7 @@ func TestProtocolMCPRequestSkipsNonMatchingResponses(t *testing.T) {
 func TestProtocolMCPRequestEOF(t *testing.T) {
 	p := NewProtocol(strings.NewReader(""), &bytes.Buffer{})
 	_, err := p.MCPToolsList(context.Background())
-	if !agenterrors.IsEOF(err) {
+	if !clerrors.IsEOF(err) {
 		t.Fatalf("MCPToolsList() err = %v, want EOF", err)
 	}
 }
