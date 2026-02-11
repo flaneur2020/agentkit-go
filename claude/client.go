@@ -80,8 +80,6 @@ func (c *Client) Process() *os.Process {
 
 type ClientBuilder struct {
 	binary                     string
-	readWriterReader           io.Reader
-	readWriterWriter           io.Writer
 	model                      string
 	maxTurns                   *int
 	maxBudgetUSD               *float64
@@ -97,9 +95,10 @@ type ClientBuilder struct {
 	permissionMode             string
 	cwd                        string
 	env                        map[string]string
+	writer                     io.Writer
+	reader                     io.Reader
 	stderr                     io.Writer
-
-	commandFactory func(ctx context.Context, name string, args ...string) *exec.Cmd
+	commandFactory             func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
 
 func NewClientBuilder() *ClientBuilder {
@@ -112,12 +111,6 @@ func NewClientBuilder() *ClientBuilder {
 
 func (b *ClientBuilder) WithBinary(path string) *ClientBuilder {
 	b.binary = strings.TrimSpace(path)
-	return b
-}
-
-func (b *ClientBuilder) WithReadWriter(r io.Reader, w io.Writer) *ClientBuilder {
-	b.readWriterReader = r
-	b.readWriterWriter = w
 	return b
 }
 
@@ -204,20 +197,30 @@ func (b *ClientBuilder) WithStderr(w io.Writer) *ClientBuilder {
 	return b
 }
 
+func (b *ClientBuilder) WithReader(r io.Reader) *ClientBuilder {
+	b.reader = r
+	return b
+}
+
+func (b *ClientBuilder) WithWriter(w io.Writer) *ClientBuilder {
+	b.writer = w
+	return b
+}
+
 func (b *ClientBuilder) Build(ctx context.Context) (*Client, error) {
-	hasReader := b.readWriterReader != nil
-	hasWriter := b.readWriterWriter != nil
+	hasReader := b.reader != nil
+	hasWriter := b.writer != nil
 	if hasReader || hasWriter {
 		if !hasReader || !hasWriter {
-			return nil, fmt.Errorf("withReadWriter requires both reader and writer")
+			return nil, fmt.Errorf("withReadWriter requires both stdin and stdout")
 		}
 
-		p := NewProtocol(b.readWriterReader, b.readWriterWriter)
+		p := NewProtocol(b.reader, b.writer)
 		client := &Client{protocol: p}
-		if stdin, ok := b.readWriterWriter.(io.WriteCloser); ok {
+		if stdin, ok := b.writer.(io.WriteCloser); ok {
 			client.stdin = stdin
 		}
-		if stdout, ok := b.readWriterReader.(io.ReadCloser); ok {
+		if stdout, ok := b.reader.(io.ReadCloser); ok {
 			client.stdout = stdout
 		}
 		return client, nil

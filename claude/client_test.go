@@ -120,7 +120,8 @@ func TestClientBuilderWithReadWriter(t *testing.T) {
 	var out bytes.Buffer
 
 	client, err := NewClientBuilder().
-		WithReadWriter(in, &out).
+		WithReader(in).
+		WithWriter(&out).
 		Build(context.Background())
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
@@ -147,7 +148,7 @@ func TestClientBuilderWithReadWriter(t *testing.T) {
 }
 
 func TestClientBuilderWithReadWriterValidation(t *testing.T) {
-	_, err := NewClientBuilder().WithReadWriter(strings.NewReader(""), nil).Build(context.Background())
+	_, err := NewClientBuilder().WithReader(strings.NewReader("")).Build(context.Background())
 	if err == nil {
 		t.Fatalf("Build() error = nil, want validation error")
 	}
