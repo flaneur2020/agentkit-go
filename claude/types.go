@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -102,10 +103,43 @@ type UserPayload struct {
 }
 
 type ToolUseResult struct {
-	Filenames  []string `json:"filenames,omitempty"`
-	DurationMS int64    `json:"durationMs,omitempty"`
-	NumFiles   int      `json:"numFiles,omitempty"`
-	Truncated  bool     `json:"truncated,omitempty"`
+	Filenames   []string `json:"filenames,omitempty"`
+	DurationMS  int64    `json:"durationMs,omitempty"`
+	NumFiles    int      `json:"numFiles,omitempty"`
+	Truncated   bool     `json:"truncated,omitempty"`
+	Stdout      string   `json:"stdout,omitempty"`
+	Stderr      string   `json:"stderr,omitempty"`
+	Interrupted bool     `json:"interrupted,omitempty"`
+	IsImage     bool     `json:"isImage,omitempty"`
+	Text        string   `json:"-"`
+}
+
+func (r *ToolUseResult) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+
+	if trimmed[0] == '"' {
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return fmt.Errorf("parse tool_use_result string: %w", err)
+		}
+		r.Text = text
+		return nil
+	}
+
+	if trimmed[0] == '{' {
+		type alias ToolUseResult
+		var decoded alias
+		if err := json.Unmarshal(trimmed, &decoded); err != nil {
+			return fmt.Errorf("parse tool_use_result object: %w", err)
+		}
+		*r = ToolUseResult(decoded)
+		return nil
+	}
+
+	return fmt.Errorf("unsupported tool_use_result json type: %s", string(trimmed))
 }
 
 type ResultMessage struct {
@@ -355,8 +389,9 @@ type ModelUsage struct {
 }
 
 type UnknownMessage struct {
-	Type MessageType     `json:"type,omitempty"`
-	Raw  json.RawMessage `json:"-"`
+	Type       MessageType     `json:"type,omitempty"`
+	Raw        json.RawMessage `json:"-"`
+	ParseError string          `json:"-"`
 }
 
 func (m *UnknownMessage) GetType() MessageType {

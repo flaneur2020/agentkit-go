@@ -33,43 +33,63 @@ func (p *messageParser) ParseLine(line []byte) (Message, error) {
 
 	var env messageEnvelope
 	if err := json.Unmarshal(trimmed, &env); err != nil {
-		return nil, fmt.Errorf("parse message envelope: %w", err)
+		return nil, formatParseError("parse message envelope", trimmed, err)
 	}
 
 	switch env.Type {
 	case MessageTypeSystem:
 		var msg SystemMessage
 		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return nil, fmt.Errorf("parse system message: %w", err)
+			return unknownFromParseFailure(env.Type, trimmed, fmt.Errorf("parse system message: %w", err)), nil
 		}
 		return &msg, nil
 	case MessageTypeAssistant:
 		var msg AssistantMessage
 		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return nil, fmt.Errorf("parse assistant message: %w", err)
+			return unknownFromParseFailure(env.Type, trimmed, fmt.Errorf("parse assistant message: %w", err)), nil
 		}
 		return &msg, nil
 	case MessageTypeUser:
 		var msg UserMessage
 		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return nil, fmt.Errorf("parse user message: %w", err)
+			return unknownFromParseFailure(env.Type, trimmed, fmt.Errorf("parse user message: %w", err)), nil
 		}
 		return &msg, nil
 	case MessageTypeResult:
 		var msg ResultMessage
 		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return nil, fmt.Errorf("parse result message: %w", err)
+			return unknownFromParseFailure(env.Type, trimmed, fmt.Errorf("parse result message: %w", err)), nil
 		}
 		return &msg, nil
 	case MessageTypeStreamEvent:
 		var msg StreamEventMessage
 		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return nil, fmt.Errorf("parse stream event message: %w", err)
+			return unknownFromParseFailure(env.Type, trimmed, fmt.Errorf("parse stream event message: %w", err)), nil
 		}
 		return &msg, nil
 	default:
 		return &UnknownMessage{Type: env.Type, Raw: append([]byte(nil), trimmed...)}, nil
 	}
+}
+
+func unknownFromParseFailure(messageType MessageType, raw []byte, err error) *UnknownMessage {
+	return &UnknownMessage{
+		Type:       messageType,
+		Raw:        append([]byte(nil), raw...),
+		ParseError: err.Error(),
+	}
+}
+
+func formatParseError(context string, raw []byte, err error) error {
+	return fmt.Errorf("%s: %w\nraw:\n%s", context, err, formatRawForError(raw))
+}
+
+func formatRawForError(raw []byte) string {
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, raw, "", "  "); err == nil {
+		return indented.String()
+	}
+	return string(raw)
 }
 
 func (p *messageParser) Next() (Message, error) {

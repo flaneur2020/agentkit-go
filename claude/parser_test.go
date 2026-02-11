@@ -104,6 +104,51 @@ func TestParserParseLineUserMessage(t *testing.T) {
 	}
 }
 
+func TestParserParseLineUserMessageToolUseResultString(t *testing.T) {
+	parser := NewMessageParser(strings.NewReader(""))
+	line := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]},"tool_use_result":"command output text"}`)
+
+	msg, err := parser.ParseLine(line)
+	if err != nil {
+		t.Fatalf("ParseLine() error = %v", err)
+	}
+
+	userMsg, ok := msg.(*UserMessage)
+	if !ok {
+		t.Fatalf("ParseLine() type = %T, want *UserMessage", msg)
+	}
+	if userMsg.ToolUseResult == nil {
+		t.Fatalf("tool_use_result = nil, want value")
+	}
+	if userMsg.ToolUseResult.Text != "command output text" {
+		t.Fatalf("tool_use_result.Text = %q, want command output text", userMsg.ToolUseResult.Text)
+	}
+}
+
+func TestParserParseLineTypedParseFailureFallsBackToUnknown(t *testing.T) {
+	parser := NewMessageParser(strings.NewReader(""))
+	line := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"unsupported_block"}]}}`)
+
+	msg, err := parser.ParseLine(line)
+	if err != nil {
+		t.Fatalf("ParseLine() error = %v, want nil", err)
+	}
+
+	unknownMsg, ok := msg.(*UnknownMessage)
+	if !ok {
+		t.Fatalf("ParseLine() type = %T, want *UnknownMessage", msg)
+	}
+	if unknownMsg.Type != MessageTypeUser {
+		t.Fatalf("Type = %q, want user", unknownMsg.Type)
+	}
+	if string(unknownMsg.Raw) != string(line) {
+		t.Fatalf("Raw = %s, want %s", unknownMsg.Raw, line)
+	}
+	if !strings.Contains(unknownMsg.ParseError, "parse user message") {
+		t.Fatalf("ParseError = %q, want parse user message", unknownMsg.ParseError)
+	}
+}
+
 func TestParserParseLineResultMessage(t *testing.T) {
 	parser := NewMessageParser(strings.NewReader(""))
 	line := []byte(`{"type":"result","subtype":"success","is_error":false,"result":"done"}`)
@@ -266,9 +311,16 @@ func TestParserParseLineResultMessageFullFields(t *testing.T) {
 
 func TestParserParseLineInvalidJSON(t *testing.T) {
 	parser := NewMessageParser(strings.NewReader(""))
-	_, err := parser.ParseLine([]byte(`{"type":`))
+	line := []byte(`{"type":`)
+	_, err := parser.ParseLine(line)
 	if err == nil {
 		t.Fatalf("ParseLine() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "raw:\n") {
+		t.Fatalf("error = %v, want multiline raw content", err)
+	}
+	if !strings.Contains(err.Error(), string(line)) {
+		t.Fatalf("error = %v, want raw line content", err)
 	}
 }
 
