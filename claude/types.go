@@ -18,6 +18,19 @@ const (
 
 type Message interface {
 	GetType() MessageType
+	Raw() []byte
+}
+
+type messageRaw struct {
+	raw []byte
+}
+
+func (m *messageRaw) setRaw(raw []byte) {
+	m.raw = bytes.Clone(raw)
+}
+
+func (m *messageRaw) Raw() []byte {
+	return bytes.Clone(m.raw)
 }
 
 type messageEnvelope struct {
@@ -25,6 +38,7 @@ type messageEnvelope struct {
 }
 
 type SystemMessage struct {
+	messageRaw
 	Type              MessageType      `json:"type"`
 	Subtype           string           `json:"subtype,omitempty"`
 	UUID              string           `json:"uuid,omitempty"`
@@ -47,6 +61,17 @@ func (m *SystemMessage) GetType() MessageType {
 	return m.Type
 }
 
+func (m *SystemMessage) UnmarshalJSON(data []byte) error {
+	type alias SystemMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = SystemMessage(decoded)
+	m.setRaw(data)
+	return nil
+}
+
 type MCPServerState struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -58,6 +83,7 @@ type PluginInfo struct {
 }
 
 type AssistantMessage struct {
+	messageRaw
 	Type            MessageType      `json:"type"`
 	UUID            string           `json:"uuid,omitempty"`
 	SessionID       string           `json:"session_id,omitempty"`
@@ -68,6 +94,17 @@ type AssistantMessage struct {
 
 func (m *AssistantMessage) GetType() MessageType {
 	return m.Type
+}
+
+func (m *AssistantMessage) UnmarshalJSON(data []byte) error {
+	type alias AssistantMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = AssistantMessage(decoded)
+	m.setRaw(data)
+	return nil
 }
 
 type AssistantPayload struct {
@@ -83,6 +120,7 @@ type AssistantPayload struct {
 }
 
 type UserMessage struct {
+	messageRaw
 	Type            MessageType     `json:"type"`
 	UUID            string          `json:"uuid,omitempty"`
 	SessionID       string          `json:"session_id,omitempty"`
@@ -95,6 +133,17 @@ type UserMessage struct {
 
 func (m *UserMessage) GetType() MessageType {
 	return m.Type
+}
+
+func (m *UserMessage) UnmarshalJSON(data []byte) error {
+	type alias UserMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = UserMessage(decoded)
+	m.setRaw(data)
+	return nil
 }
 
 type UserPayload struct {
@@ -143,6 +192,7 @@ func (r *ToolUseResult) UnmarshalJSON(data []byte) error {
 }
 
 type ResultMessage struct {
+	messageRaw
 	Type              MessageType           `json:"type"`
 	Subtype           string                `json:"subtype,omitempty"`
 	UUID              string                `json:"uuid,omitempty"`
@@ -165,6 +215,17 @@ func (m *ResultMessage) GetType() MessageType {
 	return m.Type
 }
 
+func (m *ResultMessage) UnmarshalJSON(data []byte) error {
+	type alias ResultMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = ResultMessage(decoded)
+	m.setRaw(data)
+	return nil
+}
+
 type PermissionDenial struct {
 	ToolName  string          `json:"tool_name"`
 	ToolUseID string          `json:"tool_use_id"`
@@ -172,6 +233,7 @@ type PermissionDenial struct {
 }
 
 type StreamEventMessage struct {
+	messageRaw
 	Type            MessageType `json:"type"`
 	UUID            string      `json:"uuid,omitempty"`
 	SessionID       string      `json:"session_id,omitempty"`
@@ -181,6 +243,17 @@ type StreamEventMessage struct {
 
 func (m *StreamEventMessage) GetType() MessageType {
 	return m.Type
+}
+
+func (m *StreamEventMessage) UnmarshalJSON(data []byte) error {
+	type alias StreamEventMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = StreamEventMessage(decoded)
+	m.setRaw(data)
+	return nil
 }
 
 type StreamEventType string
@@ -389,13 +462,24 @@ type ModelUsage struct {
 }
 
 type UnknownMessage struct {
-	Type       MessageType     `json:"type,omitempty"`
-	Raw        json.RawMessage `json:"-"`
-	ParseError string          `json:"-"`
+	messageRaw
+	Type       MessageType `json:"type,omitempty"`
+	ParseError string      `json:"-"`
 }
 
 func (m *UnknownMessage) GetType() MessageType {
 	return m.Type
+}
+
+func (m *UnknownMessage) UnmarshalJSON(data []byte) error {
+	type alias UnknownMessage
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = UnknownMessage(decoded)
+	m.setRaw(data)
+	return nil
 }
 
 type JSONRPCRequest struct {

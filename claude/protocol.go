@@ -175,7 +175,7 @@ func (p *protocol) request(ctx context.Context, method string, params interface{
 		}
 
 		var resp JSONRPCResponse
-		if err := json.Unmarshal(unknown.Raw, &resp); err != nil {
+		if err := json.Unmarshal(unknown.Raw(), &resp); err != nil {
 			continue
 		}
 		if resp.JSONRPC != "2.0" || resp.ID != id {

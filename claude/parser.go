@@ -68,16 +68,19 @@ func (p *messageParser) ParseLine(line []byte) (Message, error) {
 		}
 		return &msg, nil
 	default:
-		return &UnknownMessage{Type: env.Type, Raw: append([]byte(nil), trimmed...)}, nil
+		msg := &UnknownMessage{Type: env.Type}
+		msg.setRaw(trimmed)
+		return msg, nil
 	}
 }
 
 func unknownFromParseFailure(messageType MessageType, raw []byte, err error) *UnknownMessage {
-	return &UnknownMessage{
+	msg := &UnknownMessage{
 		Type:       messageType,
-		Raw:        append([]byte(nil), raw...),
 		ParseError: err.Error(),
 	}
+	msg.setRaw(raw)
+	return msg
 }
 
 func formatParseError(context string, raw []byte, err error) error {

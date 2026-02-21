@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -10,6 +11,21 @@ import (
 // The parser test suite covers all stream-json message kinds in the spec:
 // system / assistant / user / result / stream_event,
 // plus unknown type fallback, invalid JSON handling, empty-line skipping, and EOF marker.
+
+func assertRawMessage(t *testing.T, msg Message, line []byte) {
+	t.Helper()
+	want := bytes.TrimSpace(line)
+	got := msg.Raw()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("Raw() = %s, want %s", got, want)
+	}
+	if len(got) > 0 {
+		got[0] ^= 0xff
+		if bytes.Equal(msg.Raw(), got) {
+			t.Fatalf("Raw() returned mutable internal buffer")
+		}
+	}
+}
 
 func TestParserParseLineSystemMessage(t *testing.T) {
 	parser := NewMessageParser(strings.NewReader(""))
@@ -30,6 +46,7 @@ func TestParserParseLineSystemMessage(t *testing.T) {
 	if systemMsg.SessionID != "s1" {
 		t.Fatalf("SessionID = %q, want s1", systemMsg.SessionID)
 	}
+	assertRawMessage(t, systemMsg, line)
 }
 
 func TestParserParseLineUnknownType(t *testing.T) {
@@ -48,9 +65,7 @@ func TestParserParseLineUnknownType(t *testing.T) {
 	if unknownMsg.Type != "other" {
 		t.Fatalf("Type = %q, want other", unknownMsg.Type)
 	}
-	if string(unknownMsg.Raw) != string(line) {
-		t.Fatalf("Raw = %s, want %s", unknownMsg.Raw, line)
-	}
+	assertRawMessage(t, unknownMsg, line)
 }
 
 func TestParserParseLineAssistantMessage(t *testing.T) {
@@ -75,6 +90,7 @@ func TestParserParseLineAssistantMessage(t *testing.T) {
 	if assistantMsg.Message.Content[0].Text == nil || assistantMsg.Message.Content[0].Text.Text != "hello" {
 		t.Fatalf("text = %+v, want hello", assistantMsg.Message.Content[0].Text)
 	}
+	assertRawMessage(t, assistantMsg, line)
 }
 
 func TestParserParseLineUserMessage(t *testing.T) {
@@ -102,6 +118,7 @@ func TestParserParseLineUserMessage(t *testing.T) {
 	if userMsg.Message.Content[0].ToolResult == nil || userMsg.Message.Content[0].ToolResult.ToolUseID != "toolu_1" {
 		t.Fatalf("tool result = %+v, want toolu_1", userMsg.Message.Content[0].ToolResult)
 	}
+	assertRawMessage(t, userMsg, line)
 }
 
 func TestParserParseLineUserMessageToolUseResultString(t *testing.T) {
@@ -123,6 +140,7 @@ func TestParserParseLineUserMessageToolUseResultString(t *testing.T) {
 	if userMsg.ToolUseResult.Text != "command output text" {
 		t.Fatalf("tool_use_result.Text = %q, want command output text", userMsg.ToolUseResult.Text)
 	}
+	assertRawMessage(t, userMsg, line)
 }
 
 func TestParserParseLineTypedParseFailureFallsBackToUnknown(t *testing.T) {
@@ -141,9 +159,7 @@ func TestParserParseLineTypedParseFailureFallsBackToUnknown(t *testing.T) {
 	if unknownMsg.Type != MessageTypeUser {
 		t.Fatalf("Type = %q, want user", unknownMsg.Type)
 	}
-	if string(unknownMsg.Raw) != string(line) {
-		t.Fatalf("Raw = %s, want %s", unknownMsg.Raw, line)
-	}
+	assertRawMessage(t, unknownMsg, line)
 	if !strings.Contains(unknownMsg.ParseError, "parse user message") {
 		t.Fatalf("ParseError = %q, want parse user message", unknownMsg.ParseError)
 	}
@@ -165,6 +181,7 @@ func TestParserParseLineResultMessage(t *testing.T) {
 	if resultMsg.Subtype != "success" {
 		t.Fatalf("subtype = %q, want success", resultMsg.Subtype)
 	}
+	assertRawMessage(t, resultMsg, line)
 }
 
 func TestParserParseLineStreamEventMessage(t *testing.T) {
@@ -186,6 +203,7 @@ func TestParserParseLineStreamEventMessage(t *testing.T) {
 	if eventMsg.Event.ContentBlockDelta == nil || eventMsg.Event.ContentBlockDelta.Delta.Text != "Hi" {
 		t.Fatalf("delta text = %+v, want Hi", eventMsg.Event.ContentBlockDelta)
 	}
+	assertRawMessage(t, eventMsg, line)
 }
 
 func TestParserParseLineStreamEventAllTypes(t *testing.T) {
@@ -252,6 +270,7 @@ func TestParserParseLineStreamEventAllTypes(t *testing.T) {
 			if !ok {
 				t.Fatalf("type = %T, want *StreamEventMessage", msg)
 			}
+			assertRawMessage(t, eventMsg, []byte(tc.line))
 			tc.check(t, eventMsg)
 		})
 	}
@@ -275,6 +294,7 @@ func TestParserParseLineAssistantMessageToolUseResult(t *testing.T) {
 	if assistantMsg.ToolUseResult.DurationMS != 7 {
 		t.Fatalf("durationMs = %d, want 7", assistantMsg.ToolUseResult.DurationMS)
 	}
+	assertRawMessage(t, assistantMsg, line)
 }
 
 func TestParserParseLineResultMessageFullFields(t *testing.T) {
@@ -307,6 +327,7 @@ func TestParserParseLineResultMessageFullFields(t *testing.T) {
 	if len(resultMsg.Errors) != 1 || resultMsg.Errors[0] != "x" {
 		t.Fatalf("errors = %+v, want [x]", resultMsg.Errors)
 	}
+	assertRawMessage(t, resultMsg, line)
 }
 
 func TestParserParseLineInvalidJSON(t *testing.T) {
@@ -325,7 +346,8 @@ func TestParserParseLineInvalidJSON(t *testing.T) {
 }
 
 func TestParserNextSkipsEmptyLines(t *testing.T) {
-	parser := NewMessageParser(strings.NewReader("\n \n{" + `"type":"result","subtype":"success","is_error":false` + "}\n"))
+	line := []byte(`{"type":"result","subtype":"success","is_error":false}`)
+	parser := NewMessageParser(strings.NewReader("\n \n" + string(line) + "\n"))
 	msg, err := parser.Next()
 	if err != nil {
 		t.Fatalf("Next() error = %v", err)
@@ -333,6 +355,7 @@ func TestParserNextSkipsEmptyLines(t *testing.T) {
 	if msg.GetType() != MessageTypeResult {
 		t.Fatalf("type = %s, want result", msg.GetType())
 	}
+	assertRawMessage(t, msg, line)
 }
 
 func TestParserNextEOF(t *testing.T) {
@@ -360,6 +383,7 @@ func TestAppendixAGoldenSystemMessage(t *testing.T) {
 	if len(systemMsg.Plugins) != 1 || systemMsg.Plugins[0].Name != "gopls-lsp" {
 		t.Fatalf("plugins = %+v, want gopls-lsp", systemMsg.Plugins)
 	}
+	assertRawMessage(t, systemMsg, line)
 }
 
 func TestAppendixAGoldenAssistantMessage(t *testing.T) {
@@ -383,6 +407,7 @@ func TestAppendixAGoldenAssistantMessage(t *testing.T) {
 	if assistantMsg.Message.Content[2].ToolUse == nil || assistantMsg.Message.Content[2].ToolUse.Name != "mcp__ruby-tools__random_number" {
 		t.Fatalf("tool_use[2] = %+v, want mcp__ruby-tools__random_number", assistantMsg.Message.Content[2].ToolUse)
 	}
+	assertRawMessage(t, assistantMsg, line)
 }
 
 func TestAppendixAGoldenUserToolResultMessage(t *testing.T) {
@@ -403,6 +428,7 @@ func TestAppendixAGoldenUserToolResultMessage(t *testing.T) {
 	if userMsg.ToolUseResult == nil || userMsg.ToolUseResult.NumFiles != 3 {
 		t.Fatalf("tool_use_result = %+v, want numFiles=3", userMsg.ToolUseResult)
 	}
+	assertRawMessage(t, userMsg, line)
 }
 
 func TestAppendixAGoldenResultMessage(t *testing.T) {
@@ -426,6 +452,7 @@ func TestAppendixAGoldenResultMessage(t *testing.T) {
 	if len(resultMsg.PermissionDenials) != 0 {
 		t.Fatalf("permission_denials len = %d, want 0", len(resultMsg.PermissionDenials))
 	}
+	assertRawMessage(t, resultMsg, line)
 }
 
 func TestAppendixAGoldenStreamEventMessage(t *testing.T) {
@@ -446,4 +473,5 @@ func TestAppendixAGoldenStreamEventMessage(t *testing.T) {
 	if eventMsg.Event.ContentBlockDelta == nil || eventMsg.Event.ContentBlockDelta.Delta.Text != "Dogs are loyal" {
 		t.Fatalf("delta = %+v, want Dogs are loyal", eventMsg.Event.ContentBlockDelta)
 	}
+	assertRawMessage(t, eventMsg, line)
 }
