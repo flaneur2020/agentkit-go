@@ -508,6 +508,7 @@ const (
 	UserInputTypePrompt     UserInputType = "prompt"
 	UserInputTypePermission UserInputType = "permission"
 	UserInputTypeRaw        UserInputType = "raw"
+	UserInputTypeUser       UserInputType = "user"
 )
 
 type PermissionDecision string
@@ -524,10 +525,25 @@ type PermissionInput struct {
 }
 
 type UserInput struct {
-	Type       UserInputType    `json:"type,omitempty"`
-	Prompt     string           `json:"prompt,omitempty"`
-	Permission *PermissionInput `json:"permission,omitempty"`
-	Raw        string           `json:"raw,omitempty"`
+	Type       UserInputType     `json:"type,omitempty"`
+	UUID       string            `json:"uuid,omitempty"`
+	Prompt     string            `json:"prompt,omitempty"`
+	Permission *PermissionInput  `json:"permission,omitempty"`
+	Raw        string            `json:"raw,omitempty"`
+	Message    *UserInputMessage `json:"message,omitempty"`
+}
+
+// UserInputMessage matches the 4.4 "User Message" schema.
+type UserInputMessage struct {
+	Role    string                  `json:"role,omitempty"`
+	Content []UserInputContentBlock `json:"content,omitempty"`
+}
+
+// UserInputContentBlock represents a tool_result block in a user message.
+type UserInputContentBlock struct {
+	Type      string `json:"type,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   string `json:"content,omitempty"`
 }
 
 type InitializeParams struct {

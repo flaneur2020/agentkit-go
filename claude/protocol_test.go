@@ -14,7 +14,7 @@ import (
 )
 
 // The protocol test suite covers:
-// - chat inputs (prompt / permission / raw) and validation errors,
+// - chat inputs (prompt / permission / raw / user) and validation errors,
 // - MCP initialize/initialized/tools/list/tools/call,
 // - JSON-RPC error/EOF/non-matching response branches.
 
@@ -44,6 +44,56 @@ func TestProtocolSendUserInputRaw(t *testing.T) {
 	}
 }
 
+func TestProtocolSendUserInputStreamJSONUser(t *testing.T) {
+	var out bytes.Buffer
+	p := NewProtocol(strings.NewReader(""), &out)
+
+	input := UserInput{
+		Type: UserInputTypeUser,
+		UUID: "4ffd3635-d0fb-4057-85e2-0f0a4c302fec",
+		Message: &UserInputMessage{
+			Content: []UserInputContentBlock{
+				{
+					ToolUseID: "toolu_123",
+					Content:   "/tmp/a.rb\n/tmp/b.rb",
+				},
+			},
+		},
+	}
+	if err := p.SendUserInput(context.Background(), input); err != nil {
+		t.Fatalf("SendUserInput() error = %v", err)
+	}
+
+	var payload UserInput
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal stream json user payload: %v", err)
+	}
+	if payload.Type != UserInputTypeUser {
+		t.Fatalf("type = %q, want user", payload.Type)
+	}
+	if payload.UUID != "4ffd3635-d0fb-4057-85e2-0f0a4c302fec" {
+		t.Fatalf("uuid = %q, want expected uuid", payload.UUID)
+	}
+	if payload.Message == nil {
+		t.Fatalf("message = nil, want value")
+	}
+	if payload.Message.Role != "user" {
+		t.Fatalf("role = %q, want user", payload.Message.Role)
+	}
+	if len(payload.Message.Content) != 1 {
+		t.Fatalf("content len = %d, want 1", len(payload.Message.Content))
+	}
+	if payload.Message.Content[0].Type != "tool_result" {
+		t.Fatalf("content[0].type = %q, want tool_result", payload.Message.Content[0].Type)
+	}
+	if payload.Message.Content[0].ToolUseID != "toolu_123" {
+		t.Fatalf("content[0].tool_use_id = %q, want toolu_123", payload.Message.Content[0].ToolUseID)
+	}
+	if payload.Message.Content[0].Content != "/tmp/a.rb\n/tmp/b.rb" {
+		t.Fatalf("content[0].content = %q, want expected content", payload.Message.Content[0].Content)
+	}
+}
+
 func TestProtocolSendUserInputErrors(t *testing.T) {
 	var out bytes.Buffer
 	p := NewProtocol(strings.NewReader(""), &out)
@@ -64,6 +114,70 @@ func TestProtocolSendUserInputErrors(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatalf("invalid permission decision should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{Type: UserInputTypeUser}); err == nil {
+		t.Fatalf("nil user input should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type: UserInputTypeUser,
+		Message: &UserInputMessage{
+			Role: "user",
+		},
+	}); err == nil {
+		t.Fatalf("empty user content should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type: UserInputTypeUser,
+		Message: &UserInputMessage{
+			Role: "assistant",
+			Content: []UserInputContentBlock{
+				{
+					ToolUseID: "toolu_1",
+					Content:   "ok",
+				},
+			},
+		},
+	}); err == nil {
+		t.Fatalf("unsupported user role should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type: UserInputTypeUser,
+		Message: &UserInputMessage{
+			Content: []UserInputContentBlock{
+				{
+					Content: "ok",
+				},
+			},
+		},
+	}); err == nil {
+		t.Fatalf("missing tool_use_id should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type: UserInputTypeUser,
+		Message: &UserInputMessage{
+			Content: []UserInputContentBlock{
+				{
+					Type:      "text",
+					ToolUseID: "toolu_1",
+					Content:   "ok",
+				},
+			},
+		},
+	}); err == nil {
+		t.Fatalf("unsupported user message content type should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Type:    UserInputTypePrompt,
+		Prompt:  "hello",
+		Message: &UserInputMessage{Content: []UserInputContentBlock{{ToolUseID: "toolu_1", Content: "ok"}}},
+	}); err == nil {
+		t.Fatalf("conflicting payload fields should return error")
+	}
+	if err := p.SendUserInput(context.Background(), UserInput{
+		Raw:        "{\"action\":\"continue\"}",
+		Permission: &PermissionInput{Decision: PermissionDecisionAllow},
+	}); err == nil {
+		t.Fatalf("ambiguous inferred payload fields should return error")
 	}
 	if err := p.SendUserInput(context.Background(), UserInput{Type: "unknown", Prompt: "x"}); err == nil {
 		t.Fatalf("unknown input type should return error")

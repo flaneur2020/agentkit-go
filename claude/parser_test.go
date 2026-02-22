@@ -121,6 +121,34 @@ func TestParserParseLineUserMessage(t *testing.T) {
 	assertRawMessage(t, userMsg, line)
 }
 
+func TestParserParseLineUserMessageTextBlock(t *testing.T) {
+	parser := NewMessageParser(strings.NewReader(""))
+	line := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`)
+
+	msg, err := parser.ParseLine(line)
+	if err != nil {
+		t.Fatalf("ParseLine() error = %v", err)
+	}
+
+	userMsg, ok := msg.(*UserMessage)
+	if !ok {
+		t.Fatalf("ParseLine() type = %T, want *UserMessage", msg)
+	}
+	if userMsg.Message.Role != "user" {
+		t.Fatalf("role = %q, want user", userMsg.Message.Role)
+	}
+	if len(userMsg.Message.Content) != 1 {
+		t.Fatalf("content len = %d, want 1", len(userMsg.Message.Content))
+	}
+	if userMsg.Message.Content[0].Type != ContentBlockTypeText {
+		t.Fatalf("type = %q, want text", userMsg.Message.Content[0].Type)
+	}
+	if userMsg.Message.Content[0].Text == nil || userMsg.Message.Content[0].Text.Text != "hello" {
+		t.Fatalf("text = %+v, want hello", userMsg.Message.Content[0].Text)
+	}
+	assertRawMessage(t, userMsg, line)
+}
+
 func TestParserParseLineUserMessageToolUseResultString(t *testing.T) {
 	parser := NewMessageParser(strings.NewReader(""))
 	line := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]},"tool_use_result":"command output text"}`)
