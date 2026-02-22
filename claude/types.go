@@ -544,6 +544,7 @@ type UserInputContentBlock struct {
 	Type      string `json:"type,omitempty"`
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
+	Text      string `json:"text,omitempty"`
 }
 
 type InitializeParams struct {
