@@ -289,7 +289,7 @@ func inputPayload(input UserInput) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("marshal user input: %w", err)
 		}
-		return string(payload), nil
+		return string(payload) + "\n", nil
 	default:
 		return "", fmt.Errorf("unsupported user input type: %s", input.Type)
 	}
