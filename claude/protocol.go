@@ -283,7 +283,7 @@ func inputPayload(input UserInput) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("marshal permission input: %w", err)
 		}
-		return string(payload), nil
+		return string(payload) + "\n", nil
 	case UserInputTypeUser:
 		payload, err := json.Marshal(input)
 		if err != nil {
