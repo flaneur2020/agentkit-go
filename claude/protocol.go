@@ -285,15 +285,7 @@ func inputPayload(input UserInput) (string, error) {
 		}
 		return string(payload), nil
 	case UserInputTypeUser:
-		message, err := normalizeAndValidateUserInputMessage(input.Message)
-		if err != nil {
-			return "", err
-		}
-		payload, err := json.Marshal(UserInput{
-			Type:    UserInputTypeUser,
-			UUID:    input.UUID,
-			Message: &message,
-		})
+		payload, err := json.Marshal(input)
 		if err != nil {
 			return "", fmt.Errorf("marshal user input: %w", err)
 		}
@@ -318,46 +310,4 @@ func populatedUserInputTypes(input UserInput) []UserInputType {
 		out = append(out, UserInputTypeUser)
 	}
 	return out
-}
-
-func normalizeAndValidateUserInputMessage(message *UserInputMessage) (UserInputMessage, error) {
-	if message == nil {
-		return UserInputMessage{}, fmt.Errorf("user input message is nil")
-	}
-
-	normalized := *message
-	role := strings.TrimSpace(normalized.Role)
-	switch role {
-	case "":
-		normalized.Role = "user"
-	case "user":
-		normalized.Role = role
-	default:
-		return UserInputMessage{}, fmt.Errorf("unsupported user message role: %s", normalized.Role)
-	}
-
-	if len(normalized.Content) == 0 {
-		return UserInputMessage{}, fmt.Errorf("user message content is empty")
-	}
-
-	for i := range normalized.Content {
-		blockType := strings.TrimSpace(normalized.Content[i].Type)
-		switch blockType {
-		case "":
-			normalized.Content[i].Type = string(ContentBlockTypeToolResult)
-		case string(ContentBlockTypeToolResult):
-			normalized.Content[i].Type = blockType
-		default:
-			return UserInputMessage{}, fmt.Errorf("user message content[%d] unsupported type: %s", i, normalized.Content[i].Type)
-		}
-
-		if strings.TrimSpace(normalized.Content[i].ToolUseID) == "" {
-			return UserInputMessage{}, fmt.Errorf("user message content[%d] tool_use_id is empty", i)
-		}
-		if normalized.Content[i].Content == "" {
-			return UserInputMessage{}, fmt.Errorf("user message content[%d] content is empty", i)
-		}
-	}
-
-	return normalized, nil
 }
